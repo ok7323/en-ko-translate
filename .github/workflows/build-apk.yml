@@ -1,11 +1,8 @@
-name: Build S23 APK from ZIP
+name: Build S23 Voice Translator APK
 
+# Push always launches the build. A manual run is available on the default branch.
 on:
   push:
-    branches: [main, master]
-    paths:
-      - S23_QuickTranslate_App.zip
-      - .github/workflows/build-apk.yml
   workflow_dispatch:
 
 permissions:
@@ -19,78 +16,81 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Detect ZIP archive
-        id: package
+      - name: Select uploaded source ZIP
+        id: archive
         shell: bash
         run: |
-          if [ -f S23_QuickTranslate_App.zip ]; then
-            echo 'present=true' >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          # The newest voice-app name is preferred. Keep ONE app ZIP in the repository.
+          if [[ -f S23_Voice_Translator_GitHub.zip ]]; then
+            archive=S23_Voice_Translator_GitHub.zip
+          elif [[ -f S23_QuickTranslate_App.zip ]]; then
+            archive=S23_QuickTranslate_App.zip
           else
-            echo '::error::ZIP 파일이 없습니다. 저장소 최상위에 S23_QuickTranslate_App.zip을 업로드하세요.'
+            echo '::error::No app ZIP found at repository root. Upload S23_Voice_Translator_GitHub.zip or S23_QuickTranslate_App.zip.'
             exit 1
           fi
+          echo "file=$archive" >> "$GITHUB_OUTPUT"
+          echo "Using source archive: $archive"
 
-      - name: Extract uploaded ZIP safely
-        if: steps.package.outputs.present == 'true'
+      - name: Validate and extract source ZIP
         shell: bash
+        env:
+          SOURCE_ZIP: ${{ steps.archive.outputs.file }}
         run: |
           python3 - <<'PYEXTRACT'
-          import pathlib, stat, zipfile
+          import os
+          import pathlib
+          import stat
+          import zipfile
+
           root = pathlib.Path('source').resolve()
           root.mkdir(exist_ok=True)
-          with zipfile.ZipFile('S23_QuickTranslate_App.zip') as archive:
+          with zipfile.ZipFile(os.environ['SOURCE_ZIP']) as archive:
               for member in archive.infolist():
                   name = pathlib.PurePosixPath(member.filename)
-                  mode = (member.external_attr >> 16)
-                  if name.is_absolute() or '..' in name.parts or chr(92) in member.filename or stat.S_ISLNK(mode):
+                  mode = member.external_attr >> 16
+                  if name.is_absolute() or '..' in name.parts or '\\' in member.filename or stat.S_ISLNK(mode):
                       raise SystemExit(f'Unsafe ZIP entry: {member.filename}')
-                  path = (root / member.filename).resolve()
-                  if not path.is_relative_to(root):
+                  dest = (root / member.filename).resolve()
+                  if not dest.is_relative_to(root):
                       raise SystemExit(f'ZIP path traversal: {member.filename}')
               archive.extractall(root)
-          if not (root / 'settings.gradle.kts').is_file():
-              raise SystemExit('settings.gradle.kts missing: ZIP must contain the app files at its top level')
-          if not (root / 'app' / 'build.gradle.kts').is_file():
-              raise SystemExit('app/build.gradle.kts missing')
-          print('ZIP extracted. Android project found.')
+          for name in ('settings.gradle.kts', 'build.gradle.kts', 'app/build.gradle.kts'):
+              if not (root / name).is_file():
+                  raise SystemExit(f'Missing {name}: app files must be at ZIP root')
+          print('Android project extracted and validated')
           PYEXTRACT
 
       - name: Set up Java 17
-        if: steps.package.outputs.present == 'true'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Install official Gradle 8.13
-        if: steps.package.outputs.present == 'true'
+      - name: Install Gradle 8.13
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
 
-      - name: Set up Android SDK (supported tools only)
-        if: steps.package.outputs.present == 'true'
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools'
 
-      - name: Install Android SDK components
-        if: steps.package.outputs.present == 'true'
+      - name: Install Android SDK API 36
         shell: bash
         run: sdkmanager --install 'platforms;android-36' 'build-tools;35.0.0'
 
       - name: Build debug APK
-        if: steps.package.outputs.present == 'true'
         working-directory: source
         shell: bash
         run: gradle :app:assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK artifact
-        if: steps.package.outputs.present == 'true'
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: S23QuickTranslate-debug-apk
+          name: S23-Voice-Translator-debug-apk
           path: source/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
-
