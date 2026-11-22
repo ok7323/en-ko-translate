@@ -68,9 +68,11 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Set up Android SDK
+      - name: Set up Android SDK (supported tools only)
         if: steps.package.outputs.present == 'true'
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
 
       - name: Install Android SDK components
         if: steps.package.outputs.present == 'true'
