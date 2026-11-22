@@ -26,8 +26,8 @@ jobs:
           if [ -f S23_QuickTranslate_App.zip ]; then
             echo 'present=true' >> "$GITHUB_OUTPUT"
           else
-            echo 'present=false' >> "$GITHUB_OUTPUT"
-            echo 'No project ZIP yet. Upload S23_QuickTranslate_App.zip to the repository root.'
+            echo '::error::ZIP 파일이 없습니다. 저장소 최상위에 S23_QuickTranslate_App.zip을 업로드하세요.'
+            exit 1
           fi
 
       - name: Extract uploaded ZIP safely
@@ -42,7 +42,7 @@ jobs:
               for member in archive.infolist():
                   name = pathlib.PurePosixPath(member.filename)
                   mode = (member.external_attr >> 16)
-                  if name.is_absolute() or '..' in name.parts or '\' in member.filename or stat.S_ISLNK(mode):
+                  if name.is_absolute() or '..' in name.parts or chr(92) in member.filename or stat.S_ISLNK(mode):
                       raise SystemExit(f'Unsafe ZIP entry: {member.filename}')
                   path = (root / member.filename).resolve()
                   if not path.is_relative_to(root):
